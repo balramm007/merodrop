@@ -1,0 +1,5 @@
+{
+  "name": "MeroDrop",
+  "description": "High-performance, secure P2P file sharing for the modern web.",
+  "requestFramePermissions": []
+}

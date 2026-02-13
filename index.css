@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-black text-white antialiased overflow-hidden;
+    margin: 0;
+  }
+}
+
+@layer components {
+  .radar-line {
+    @apply border border-white/5;
+  }
+}
