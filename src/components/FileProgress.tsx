@@ -1,12 +1,11 @@
-
 import React, { useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FileIcon, Check, AlertCircle, ArrowDown, ArrowUp } from 'lucide-react';
+import { FileIcon, ArrowDown, ArrowUp, X, Check, FileText } from 'lucide-react';
 import { TransferState } from '../types';
 
 interface FileProgressProps {
   transfer: TransferState;
-  onAccept?: () => void;
+  onAccept: () => void;
   onDecline: () => void;
   onClose: () => void;
 }
@@ -39,101 +38,100 @@ const FileProgress: React.FC<FileProgressProps> = ({ transfer, onAccept, onDecli
   }, [transfer.progress]);
 
   const isIncoming = transfer.direction === 'incoming';
-  const springTransition = { type: "spring", stiffness: 300, damping: 25, mass: 0.8 } as const;
   
-  return (
-    <motion.div
-      layout
-      initial={{ y: 100, opacity: 0, scale: 0.8 }}
-      animate={{ y: 0, opacity: 1, scale: 1 }}
-      exit={{ y: 50, opacity: 0, scale: 0.9 }}
-      transition={springTransition}
-      className="fixed bottom-10 right-10 w-84 bg-[#1c1c1e] rounded-[32px] shadow-[0_32px_80px_rgba(0,0,0,0.8)] border border-white/5 overflow-hidden z-50"
-    >
-      <div className="p-7">
-        <div className="flex items-center space-x-4 mb-6">
-          <div className="p-3.5 bg-primary/10 rounded-2xl relative">
-            <FileIcon className="w-6 h-6 text-primary" />
-            <div className="absolute -bottom-1 -right-1 bg-[#1c1c1e] p-1 rounded-full border border-white/5">
-              {isIncoming ? <ArrowDown className="w-3 h-3 text-green-500" /> : <ArrowUp className="w-3 h-3 text-blue-500" />}
-            </div>
-          </div>
-          <div className="flex-1 min-w-0">
-            <h4 className="text-[16px] font-bold text-white truncate">
-              {transfer.fileName}
-            </h4>
-            <p className="text-[13px] text-[#9aa0a6] font-semibold">
-              {(transfer.fileSize / (1024 * 1024)).toFixed(1)} MB • {isIncoming ? 'Incoming' : 'Outgoing'}
-            </p>
-          </div>
-        </div>
+  // iOS-style spring transition
+  const springTransition = { type: "spring", stiffness: 350, damping: 25 };
 
-        {transfer.status === 'pending' && isIncoming ? (
-          <div className="flex space-x-3 mt-4">
-            <button
-              onClick={onDecline}
-              className="flex-1 py-4 bg-[#2c2c2e] hover:bg-[#3a3a3c] text-[14px] font-bold text-[#9aa0a6] rounded-2xl transition-all active:scale-95"
-            >
-              Decline
-            </button>
-            <button
-              onClick={onAccept}
-              className="flex-1 py-4 bg-primary hover:bg-primary/90 text-[14px] font-bold text-white rounded-2xl transition-all shadow-lg shadow-primary/20 active:scale-95"
-            >
-              Accept
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center text-[12px] font-black uppercase tracking-widest text-[#9aa0a6]">
-              <span className={transfer.status === 'error' ? 'text-red-500' : ''}>
-                {transfer.status === 'transferring' ? (transfer.speed || 'Transferring...') : 
-                 transfer.status === 'pending' ? 'WAITING FOR PEER...' : transfer.status.toUpperCase()}
-              </span>
-              <span ref={textRef} className="text-primary">{Math.round(transfer.progress)}%</span>
+  return (
+    <AnimatePresence>
+      <motion.div
+        layout
+        initial={{ y: 120, opacity: 0, scale: 0.9 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: 120, opacity: 0, scale: 0.9 }}
+        transition={springTransition}
+        className="fixed bottom-6 inset-x-4 md:inset-auto md:bottom-8 md:right-8 md:w-[400px] bg-white/90 dark:bg-[#1c1c1e]/90 backdrop-blur-3xl rounded-[28px] shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-white/20 dark:border-white/10 z-[100] overflow-hidden"
+      >
+        <div className="p-5">
+          {/* Header Section */}
+          <div className="flex items-center space-x-4 mb-6">
+            <div className="relative flex-shrink-0">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-500/10 to-blue-600/20 dark:from-blue-500/20 dark:to-blue-600/30 rounded-2xl flex items-center justify-center border border-blue-500/10 dark:border-blue-500/20">
+                <FileText className="w-8 h-8 text-blue-600 dark:text-blue-400" strokeWidth={1.5} />
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-white dark:bg-[#2c2c2e] p-1.5 rounded-full border border-white/10 shadow-sm">
+                {isIncoming ? (
+                  <ArrowDown className="w-3.5 h-3.5 text-green-500" strokeWidth={3} />
+                ) : (
+                  <ArrowUp className="w-3.5 h-3.5 text-blue-500" strokeWidth={3} />
+                )}
+              </div>
             </div>
             
-            <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden">
-              <div
-                ref={barRef}
-                className={`h-full ${transfer.status === 'error' ? 'bg-red-500' : 'bg-primary'}`}
-                style={{ width: `${transfer.progress}%` }}
-              />
-            </div>
-
-            <AnimatePresence mode="wait">
-              {transfer.status === 'completed' && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
-                  className="flex items-center justify-center text-green-500 text-[14px] font-bold pt-1"
-                >
-                  <Check className="w-4 h-4 mr-2" /> Transfer Complete
-                </motion.div>
-              )}
-              {transfer.status === 'error' && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
-                  className="flex flex-col items-center gap-3 pt-1"
-                >
-                  <div className="flex items-center text-red-500 text-[14px] font-bold">
-                    <AlertCircle className="w-4 h-4 mr-2" /> {transfer.error || 'Transfer failed'}
-                  </div>
-                  <button onClick={onDecline} className="text-[11px] font-black uppercase tracking-widest text-red-500/60 hover:text-red-500 underline underline-offset-4">Dismiss</button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {(transfer.status === 'transferring' || transfer.status === 'pending') && (
-              <div className="flex justify-center pt-2">
-                <button onClick={onDecline} className="text-[11px] font-black uppercase tracking-widest text-red-500/60 hover:text-red-500 transition-colors">
-                  Cancel
-                </button>
+            <div className="flex-1 min-w-0">
+              <h4 className="text-[17px] font-semibold text-black dark:text-white truncate leading-tight">
+                {transfer.fileName}
+              </h4>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[13px] text-gray-500 dark:text-gray-400 font-medium">
+                  {isIncoming ? 'From' : 'To'} <span className="text-black dark:text-gray-200">{transfer.peerName || 'Unknown'}</span>
+                </span>
+                <span className="text-[13px] text-gray-300 dark:text-gray-600">•</span>
+                <span className="text-[13px] text-gray-500 dark:text-gray-400 font-medium">
+                  {(transfer.fileSize / (1024 * 1024)).toFixed(1)} MB
+                </span>
               </div>
-            )}
+            </div>
           </div>
-        )}
-      </div>
-    </motion.div>
+
+          {/* Action Area */}
+          {transfer.status === 'pending' && isIncoming ? (
+            <div className="grid grid-cols-2 gap-3">
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={onDecline}
+                className="py-3.5 bg-[#f2f2f7] dark:bg-[#2c2c2e] hover:bg-[#e5e5ea] dark:hover:bg-[#3a3a3c] text-black dark:text-white text-[15px] font-semibold rounded-xl transition-colors"
+              >
+                Decline
+              </motion.button>
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={onAccept}
+                className="py-3.5 bg-blue-500 hover:bg-blue-600 text-white text-[15px] font-semibold rounded-xl shadow-lg shadow-blue-500/25 transition-all"
+              >
+                Accept
+              </motion.button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex justify-between items-end">
+                <span className={`text-[11px] font-bold uppercase tracking-wider ${
+                  transfer.status === 'error' || transfer.status === 'declined' ? 'text-red-500' : 
+                  transfer.status === 'completed' ? 'text-green-500' : 'text-blue-500'
+                }`}>
+                  {transfer.status === 'transferring' ? 'Sending...' : transfer.status}
+                </span>
+                <span ref={textRef} className="text-[13px] font-semibold text-gray-900 dark:text-white tabular-nums">
+                  {Math.round(transfer.progress)}%
+                </span>
+              </div>
+              
+              <div className="h-2 w-full bg-[#f2f2f7] dark:bg-white/10 rounded-full overflow-hidden">
+                <motion.div
+                  ref={barRef}
+                  className={`h-full rounded-full ${
+                    transfer.status === 'error' || transfer.status === 'declined' ? 'bg-red-500' : 
+                    transfer.status === 'completed' ? 'bg-green-500' : 'bg-blue-500'
+                  }`}
+                  initial={{ width: 0 }}
+                  style={{ width: `${transfer.progress}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </AnimatePresence>
   );
 };
 

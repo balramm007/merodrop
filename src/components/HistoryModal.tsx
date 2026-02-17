@@ -31,7 +31,7 @@ const HistoryModal: React.FC<Props> = ({ history, onClose }) => {
             history.map((item) => (
               <div key={item.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50">
                 <div className="flex items-center space-x-3">
-                  {item.direction === 'received' ? (
+                  {(item.direction === 'received' || item.direction === 'incoming') ? (
                     <ArrowDownCircle className="w-8 h-8 text-green-500" />
                   ) : (
                     <ArrowUpCircle className="w-8 h-8 text-blue-500" />

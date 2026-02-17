@@ -30,13 +30,13 @@ const HistorySidebar: React.FC<Props> = ({ history, isOpen, onClose }) => {
         ) : (
           history.map((item) => (
             <div key={item.id} className="p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all flex items-start gap-3">
-              <div className={`p-2 rounded-lg ${item.direction === 'sent' ? 'bg-blue-500/10 text-blue-400' : 'bg-green-500/10 text-green-400'}`}>
+              <div className={`p-2 rounded-lg ${(item.direction === 'sent' || item.direction === 'outgoing') ? 'bg-blue-500/10 text-blue-400' : 'bg-green-500/10 text-green-400'}`}>
                 <File size={18} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between items-start mb-1">
                   <p className="text-sm font-semibold text-white truncate">{item.fileName}</p>
-                  {item.direction === 'sent' ? <ArrowUpRight size={14} className="text-blue-400 shrink-0" /> : <ArrowDownLeft size={14} className="text-green-400 shrink-0" />}
+                  {(item.direction === 'sent' || item.direction === 'outgoing') ? <ArrowUpRight size={14} className="text-blue-400 shrink-0" /> : <ArrowDownLeft size={14} className="text-green-400 shrink-0" />}
                 </div>
                 <p className="text-xs text-[#9aa0a6] truncate">{item.peerName}</p>
                 <div className="flex justify-between items-center mt-2 text-[10px] text-[#5f6368]">

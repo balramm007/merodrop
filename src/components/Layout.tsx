@@ -18,7 +18,7 @@ const Layout: React.FC<LayoutProps> = ({ children, settings, toggleTheme }) => {
     <div className={`h-screen w-full relative flex flex-col ${settings.theme === 'dark' ? 'dark bg-black' : 'bg-[#f8f9fa]'} text-white overflow-hidden font-sans transition-colors duration-500`}>
       <header className="fixed top-0 inset-x-0 h-16 flex items-center justify-between px-6 z-50 bg-transparent backdrop-blur-sm pointer-events-none">
         <div className="fixed top-4 left-6 flex items-center gap-3 pointer-events-auto select-none z-50">
-          <img src={LOGO_URL} alt="MeroDrop" className="w-8 h-8 rounded-lg shadow-sm object-contain" />
+          <img src="https://official.balrampathak.com.np/web/image/1416-4e563daf/mero-drop-logo.webp" alt="MeroDrop" className="w-8 h-8 rounded-full shadow-sm object-contain" />
           <span className={`text-xl font-bold ${settings.theme === 'dark' ? 'text-white' : 'text-black'}`}>MeroDrop</span>
         </div>
 

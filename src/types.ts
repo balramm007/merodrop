@@ -18,9 +18,10 @@ export interface TransferState {
   fileType: string;
   progress: number;
   speed: number; // bytes per second
-  status: 'pending' | 'transferring' | 'completed' | 'error';
+  status: 'pending' | 'transferring' | 'completed' | 'error' | 'declined';
   direction: 'incoming' | 'outgoing';
   peerId: string;
+  peerName?: string;
   error?: string;
 }
 
@@ -28,9 +29,10 @@ export interface HistoryItem {
   id: string;
   fileName: string;
   fileSize: number;
+  fileType?: string;
   peerName: string;
   timestamp: number;
-  direction: 'sent' | 'received';
+  direction: 'incoming' | 'outgoing' | 'sent' | 'received';
 }
 
 export interface FileMeta {
@@ -38,6 +40,13 @@ export interface FileMeta {
   name: string;
   size: number;
   type: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  text: string;
+  timestamp: number;
 }
 
 // Re-export for compatibility with older imports if any

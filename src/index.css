@@ -8,31 +8,61 @@
     transition: background-color 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     margin: 0;
   }
+
+  /* Fluid Typography & Spacing */
+  h1, .text-fluid-h1 {
+    font-size: clamp(2rem, 5vw, 4rem);
+  }
+  
+  h2, .text-fluid-h2 {
+    font-size: clamp(1.5rem, 4vw, 3rem);
+  }
+
+  .p-fluid {
+    padding: clamp(1rem, 5vw, 3rem);
+  }
+
+  /* Custom Scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-[#FFFDD0] dark:bg-zinc-900;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-black/10 dark:bg-white/10 rounded-full hover:bg-black/20 dark:hover:bg-white/20 transition-colors;
+  }
 }
 
 @layer utilities {
   .animate-sonar {
     animation: sonar 12s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
     will-change: transform, opacity;
-    transform: translateZ(0);
+    transform: translate3d(0, 0, 0);
     backface-visibility: hidden;
     opacity: 0; /* Fix refresh glitch */
-    border: 0.5px solid rgba(59, 130, 246, 0.1); /* Light mode default */
+    border: 1.5px solid rgba(0, 0, 0, 0.15); /* Light mode: Slightly bolder & clearer */
   }
 
   .dark .animate-sonar {
-    border-color: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 1); /* Dark mode: True White */
   }
   
-  /* Staggered Delays for 8 Rings (1.5s interval) */
+  .animate-logo-beat {
+    animation: logo-beat 2s ease-in-out infinite;
+    will-change: transform;
+    transform: translateZ(0);
+  }
+  
+  /* Staggered Delays for 5 Rings (2.4s interval) */
   .delay-0 { animation-delay: 0s; }
-  .delay-1500 { animation-delay: 1.5s; }
-  .delay-3000 { animation-delay: 3s; }
-  .delay-4500 { animation-delay: 4.5s; }
-  .delay-6000 { animation-delay: 6s; }
-  .delay-7500 { animation-delay: 7.5s; }
-  .delay-9000 { animation-delay: 9s; }
-  .delay-10500 { animation-delay: 10.5s; }
+  .delay-2400 { animation-delay: 2.4s; }
+  .delay-4800 { animation-delay: 4.8s; }
+  .delay-7200 { animation-delay: 7.2s; }
+  .delay-9600 { animation-delay: 9.6s; }
   
   /* GPU Acceleration Helper */
   .gpu-accelerated {
@@ -72,5 +102,14 @@
   100% {
     transform: scale(6);
     opacity: 0.05;
+  }
+}
+
+@keyframes logo-beat {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
   }
 }

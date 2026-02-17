@@ -47,6 +47,7 @@ const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedPeerId = useRef<string | null>(null);
   const lastProcessedMessageId = useRef<string | null>(null);
+  const processedChatIds = useRef<Set<string>>(new Set());
 
   // --- Initialization ---
   useEffect(() => {
@@ -54,6 +55,15 @@ const App: React.FC = () => {
     const timer = setTimeout(() => setIsAppLoading(false), 1500);
     return () => clearTimeout(timer);
   }, []);
+
+  // Sync theme with HTML class whenever it changes
+  useEffect(() => {
+    if (settings.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [settings.theme]);
 
   useEffect(() => {
     // 1. Load Settings
@@ -100,9 +110,13 @@ const App: React.FC = () => {
     };
 
     const handleIncomingFileRequest = (data: any) => {
+      // Lookup sender name immediately
+      const senderName = data.senderName || peers[data.peerId]?.name || 'Anonymous';
+
       setActiveTransfer({
         fileId: data.fileId,
         peerId: data.peerId,
+        peerName: senderName,
         fileName: data.fileName,
         fileSize: data.fileSize,
         fileType: data.fileType,
@@ -123,30 +137,70 @@ const App: React.FC = () => {
     };
 
     const handleFileReceived = (data: any) => {
-      const url = URL.createObjectURL(data.file);
+      // FIX: Use metadata for Blob creation
+      const blob = new Blob([data.file], { type: data.fileType || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = data.file.name;
+      // FIX: Use original fileName
+      a.download = data.fileName || 'download';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
+      // Add to History
+      const peer = peers[data.peerId];
+      dbService.addHistory({
+        id: data.fileId || crypto.randomUUID(),
+        fileName: data.fileName || 'unknown',
+        fileSize: data.file.size || 0,
+        fileType: data.fileType || 'application/octet-stream',
+        peerName: peer ? peer.name : 'Unknown',
+        timestamp: Date.now(),
+        direction: 'incoming'
+      });
+
       toast.success("File Received!");
       setActiveTransfer(null);
     };
 
-    const handleChatReceived = (data: { peerId: string, text: string, id: string }) => {
-        // Deduplication using UUID
-        if (lastProcessedMessageId.current === data.id) {
-            return; 
-        }
+  const handleChatReceived = (data: { peerId: string, text: string, id: string }) => {
+        // Deduplication using Set
+        if (processedChatIds.current.has(data.id)) return;
+        processedChatIds.current.add(data.id);
+        
         lastProcessedMessageId.current = data.id;
 
+        // Access latest peers state to identify sender correctly without stale closure issues
         setPeers(currentPeers => {
             const sender = currentPeers[data.peerId] || { id: data.peerId, name: 'Unknown', device: 'Unknown', deviceType: 'desktop' };
-            setIncomingChats(prev => [...prev, { peer: sender, text: data.text, id: crypto.randomUUID() }]);
-            return currentPeers; 
+            
+            dbService.addHistory({
+              id: data.id,
+              fileName: 'Chat Message', // Using fileName field for chat label
+              fileSize: data.text.length,
+              fileType: 'text/plain',
+              peerName: sender.name,
+              timestamp: Date.now(),
+              direction: 'incoming'
+            });
+
+            setIncomingChats(prev => {
+              // Ensure we don't add duplicates to state if they somehow got through
+              if (prev.some(c => c.id === data.id)) return prev;
+
+              const newChat = { peer: sender, text: data.text, id: data.id };
+              const updated = [...prev, newChat].slice(-5); // Keep last 5
+              return updated;
+            });
+
+            // Set timeout to remove this specific message
+            setTimeout(() => {
+              setIncomingChats(current => current.filter(c => c.id !== data.id));
+            }, 8000);
+
+            return currentPeers;
         });
     };
 
@@ -190,21 +244,25 @@ const App: React.FC = () => {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && selectedPeerId.current) {
-      PeerService.sendFile(file, selectedPeerId.current);
+      const fileId = PeerService.sendFile(file, selectedPeerId.current);
       
-      setActiveTransfer({
-        fileId: crypto.randomUUID(),
-        peerId: selectedPeerId.current,
-        fileName: file.name,
-        fileSize: file.size,
-        fileType: file.type,
-        progress: 0,
-        speed: 0,
-        status: 'transferring',
-        direction: 'outgoing'
-      });
-      
-      toast.success(`Sending ${file.name}...`);
+      if (fileId) {
+          const targetPeer = peers[selectedPeerId.current];
+          setActiveTransfer({
+            fileId: fileId,
+            peerId: selectedPeerId.current,
+            peerName: targetPeer?.name || 'Unknown',
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            progress: 0,
+            speed: 0,
+            status: 'pending', // Waiting for acceptance
+            direction: 'outgoing'
+          });
+          
+          toast.success(`Requesting to send ${file.name}...`);
+      }
       e.target.value = '';
     }
     selectedPeerId.current = null;
@@ -221,6 +279,18 @@ const App: React.FC = () => {
     PeerService.updateName(newName);
     setIsEditingName(false);
     toast.success("Identity Updated");
+  };
+
+  const handleAcceptTransfer = () => {
+    if (!activeTransfer) return;
+    PeerService.acceptTransfer(activeTransfer.fileId, activeTransfer.peerId);
+    setActiveTransfer(prev => prev ? { ...prev, status: 'transferring' } : null);
+  };
+
+  const handleDeclineTransfer = () => {
+    if (!activeTransfer) return;
+    PeerService.declineTransfer(activeTransfer.fileId, activeTransfer.peerId);
+    setActiveTransfer(null);
   };
 
   const peerList = useMemo(() => Object.values(peers), [peers]);
@@ -352,8 +422,8 @@ const App: React.FC = () => {
                       transition={{ duration: 0.3 }}
                       className="flex flex-col items-center justify-center -translate-y-[200px] gpu-accelerated"
                     >
-                      <h1 className={`text-4xl font-bold mb-4 transition-colors duration-300 ${settings.theme === 'light' ? 'text-[#000000]' : 'text-[#FFFFFF]'}`}>Waiting for users...</h1>
-                      <p className={`text-xl font-medium transition-colors duration-300 ${settings.theme === 'light' ? 'text-[#000000]' : 'text-[#FFFFFF]'}`}>MeroDrop is searching for nearby devices</p>
+                      <h1 className={`text-4xl font-bold mb-4 transition-colors duration-300 ${settings.theme === 'light' ? 'text-[#000000]' : 'text-white'}`}>Waiting for users...</h1>
+                      <p className={`text-xl font-medium transition-colors duration-300 ${settings.theme === 'light' ? 'text-[#000000]' : 'text-white'}`}>MeroDrop is searching for nearby devices</p>
                     </motion.div>
                   ) : (
                     <motion.div 
@@ -369,13 +439,13 @@ const App: React.FC = () => {
                       <div className="w-full flex flex-col items-center px-6 pointer-events-none select-none flex-shrink-0">
                         <motion.h1 
                           layout
-                          className={`text-[30px] md:text-[40px] font-bold text-center mb-4 leading-tight drop-shadow-2xl transition-colors duration-300 ${settings.theme === 'light' ? 'text-[#000000]' : 'text-[#FFFFFF]'}`}
+                          className={`text-[clamp(1.8rem,5vw,3.5rem)] font-bold text-center mb-4 leading-tight drop-shadow-2xl transition-colors duration-300 ${settings.theme === 'light' ? 'text-[#000000]' : 'text-[#FFFFFF]'}`}
                         >
                           Open MeroDrop to share files easily!
                         </motion.h1>
                         <motion.p 
                           layout
-                          className="text-[#9aa0a6] text-[14px] md:text-[18px] max-w-2xl text-center font-semibold transition-colors duration-300"
+                          className="text-[#9aa0a6] text-[clamp(1rem,3vw,1.25rem)] max-w-2xl text-center font-semibold transition-colors duration-300"
                         >
                           Simple, Fast, Private Sharing
                         </motion.p>
@@ -416,8 +486,8 @@ const App: React.FC = () => {
                 <div className="absolute inset-0 bg-blue-500/30 rounded-full animate-ripple" style={{ animationDelay: '2s', willChange: 'transform, opacity' }} />
                 <div className="absolute inset-0 bg-blue-500/30 rounded-full animate-ripple" style={{ animationDelay: '3s', willChange: 'transform, opacity' }} />
                 
-                <div className="relative w-16 h-16 bg-black/50 backdrop-blur-xl rounded-full border border-white/10 flex items-center justify-center shadow-2xl z-10 transition-transform duration-300 group-hover:scale-110 gpu-accelerated">
-                  <img src={LOGO_URL} alt="Logo" className="w-10 h-10 object-contain" />
+                <div className="relative w-16 h-16 bg-black/50 backdrop-blur-xl rounded-full border border-white/10 flex items-center justify-center shadow-2xl z-10 transition-transform duration-300 group-hover:scale-110 gpu-accelerated animate-logo-beat overflow-hidden">
+                  <img src={LOGO_URL} alt="Logo" className="w-14 h-14 rounded-full object-contain" />
                 </div>
               </div>
 
@@ -425,8 +495,8 @@ const App: React.FC = () => {
               <motion.div 
                 className={`pointer-events-auto flex items-center cursor-pointer group px-6 py-3 rounded-full border backdrop-blur-md transition-colors gpu-accelerated shadow-2xl ${
                   settings.theme === 'light' 
-                    ? 'bg-[#000000] border-black/10 hover:bg-black/90' 
-                    : 'bg-[#FFFDD0] border-white/10 hover:bg-[#FFFDD0]/90'
+                    ? 'bg-[#000000] border-white/10 hover:bg-black/90' 
+                    : 'bg-[#fcf7f0] border-black/10 hover:bg-[#fcf7f0]/90'
                 }`}
                 onClick={() => { setTempName(settings.deviceName); setIsEditingName(true); }}
               >
@@ -489,39 +559,37 @@ const App: React.FC = () => {
               {activeTransfer && (
                 <FileProgress 
                   transfer={activeTransfer} 
-                  onAccept={() => {
-                      setActiveTransfer(prev => prev ? { ...prev, status: 'transferring' } : null);
-                  }}
-                  onDecline={() => {
-                      setActiveTransfer(null);
-                  }}
+                  onAccept={handleAcceptTransfer}
+                  onDecline={handleDeclineTransfer}
                   onClose={() => setActiveTransfer(null)}
                 />
               )}
             </AnimatePresence>
 
             {/* Incoming Chat Bubbles */}
-            <div className="fixed top-24 right-6 z-[60] flex flex-col gap-4">
-              <AnimatePresence>
+            <div className="fixed top-24 right-6 z-[60] flex flex-col gap-4 pointer-events-none">
+              <AnimatePresence mode="popLayout">
                 {incomingChats.map((chat) => (
                   <motion.div
                     key={chat.id}
-                    initial={{ x: 300, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    exit={{ x: 300, opacity: 0 }}
-                    className="bg-[#1c1c1e]/90 backdrop-blur-md border border-white/10 p-4 rounded-[32px] shadow-2xl max-w-xs cursor-pointer"
+                    layout
+                    initial={{ x: 100, opacity: 0, scale: 0.9 }}
+                    animate={{ x: 0, opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
+                    className="bg-[#1c1c1e]/90 backdrop-blur-md border border-white/10 p-4 rounded-[20px] shadow-2xl max-w-xs cursor-pointer pointer-events-auto gpu-accelerated origin-right"
+                    style={{ willChange: 'transform, opacity' }}
                     onClick={() => {
                         setChatTarget(chat.peer);
                         setIncomingChats(prev => prev.filter(c => c.id !== chat.id));
                     }}
                   >
-                      <div className="flex items-center gap-2 mb-2">
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-xs">
+                      <div className="flex items-center gap-2 mb-1">
+                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-[10px]">
                               {chat.peer.name[0]}
                           </div>
-                          <span className="text-white font-bold text-sm">{chat.peer.name}</span>
+                          <span className="text-white font-bold text-xs">{chat.peer.name}</span>
                       </div>
-                      <p className="text-gray-300 text-sm">{chat.text}</p>
+                      <p className="text-gray-200 text-sm font-medium leading-snug">{chat.text}</p>
                   </motion.div>
                 ))}
               </AnimatePresence>

@@ -33,6 +33,8 @@ class PeerService extends EventEmitter {
   private myDevice: string = '';
   private myDeviceType: 'mobile' | 'tablet' | 'desktop' = 'desktop';
   private lastId: string | null = null;
+  private pendingTransfers: Map<string, { file: File, peerId: string }> = new Map();
+  private discoveryInterval: any = null;
 
   private constructor() {
     super();
@@ -63,11 +65,26 @@ class PeerService extends EventEmitter {
     this.myName = name;
     this.myDevice = device;
 
+    this.attemptConnection();
+  }
+
+  private attemptConnection() {
+    // Clear any existing discovery interval
+    if (this.discoveryInterval) {
+      clearInterval(this.discoveryInterval);
+      this.discoveryInterval = null;
+    }
+
     // Use a fixed 'lan' hash for local discovery simulation + random slot
     // This allows peers to find each other by scanning the slots
     const ipHash = 'lan'; 
     const slot = Math.floor(Math.random() * MAX_DISCOVERY_SLOTS);
     const peerId = `merodrop-${ipHash}-${slot}`;
+
+    if (this.peer) {
+        this.peer.destroy();
+        this.peer = null;
+    }
 
     this.peer = new Peer(peerId, {
       debug: 0 // Suppress internal logs
@@ -77,6 +94,10 @@ class PeerService extends EventEmitter {
       this.myId = id;
       this.emit('open', id);
       this.discoverPeers(ipHash, slot);
+
+      // Periodic discovery for robustness (every 5s)
+      // This ensures peers that come online later are found
+      this.discoveryInterval = setInterval(() => this.discoverPeers(ipHash, slot), 5000);
     });
 
     this.peer.on('connection', (conn) => {
@@ -84,12 +105,23 @@ class PeerService extends EventEmitter {
     });
 
     this.peer.on('error', (err) => {
+      if (err.type === 'unavailable-id') {
+        // ID collision - retry with a new slot immediately
+        console.warn(`Peer ID ${peerId} is taken, retrying...`);
+        this.attemptConnection();
+        return;
+      }
+      
       // Ignore peer-unavailable errors during discovery
       if (err.type === 'peer-unavailable') return;
+      
       this.emit('error', err);
     });
 
     window.addEventListener('beforeunload', () => {
+      if (this.discoveryInterval) {
+        clearInterval(this.discoveryInterval);
+      }
       this.peer?.destroy();
     });
   }
@@ -98,7 +130,8 @@ class PeerService extends EventEmitter {
     for (let i = 0; i < MAX_DISCOVERY_SLOTS; i++) {
       if (i === mySlot) continue;
       const targetId = `merodrop-${ipHash}-${i}`;
-      this.connect(targetId);
+      // Stagger connections slightly to avoid rate limiting
+      setTimeout(() => this.connect(targetId), i * 50);
     }
   }
 
@@ -126,39 +159,55 @@ class PeerService extends EventEmitter {
 
     const fileId = crypto.randomUUID();
     
-    // 1. Send metadata
+    // Store file for later (Handshake Protocol)
+    this.pendingTransfers.set(fileId, { file, peerId });
+    
+    // 1. Send metadata (Handshake Request)
     conn.send({
       type: 'file-metadata',
       fileId,
       fileName: file.name,
       fileSize: file.size,
-      fileType: file.type
-    });
-
-    // 2. Send file
-    conn.send({
-      type: 'file-chunk',
-      fileId,
-      data: file
+      fileType: file.type || 'application/octet-stream',
+      senderName: this.myName
     });
 
     this.emit('transfer-progress', {
       fileId,
       peerId,
-      progress: 100,
+      progress: 0,
       direction: 'outgoing',
-      status: 'completed',
+      status: 'pending', // Waiting for acceptance
       fileName: file.name,
       fileSize: file.size,
-      fileType: file.type
+      fileType: file.type || 'application/octet-stream'
     });
+    
+    return fileId;
+  }
+
+  public acceptTransfer(fileId: string, peerId: string) {
+    const conn = this.connections.get(peerId);
+    if (!conn) return;
+    conn.send({ type: 'accept-transfer', fileId, senderName: this.myName });
+  }
+
+  public declineTransfer(fileId: string, peerId: string) {
+    const conn = this.connections.get(peerId);
+    if (!conn) return;
+    conn.send({ type: 'decline-transfer', fileId, senderName: this.myName });
   }
 
   public sendChat(text: string, peerId: string) {
     const conn = this.connections.get(peerId);
     if (!conn) return;
     const id = crypto.randomUUID();
-    conn.send({ type: 'chat', payload: text, id });
+    conn.send({ 
+      type: 'chat', 
+      payload: text, 
+      id,
+      senderName: this.myName 
+    });
   }
 
   public updateName(name: string) {
@@ -249,12 +298,58 @@ class PeerService extends EventEmitter {
         ...data,
         peerId
       });
+    } else if (data.type === 'accept-transfer') {
+        const transfer = this.pendingTransfers.get(data.fileId);
+        if (transfer) {
+            const { file } = transfer;
+            // Send actual file now
+            conn.send({
+                type: 'file-chunk',
+                fileId: data.fileId,
+                fileName: file.name,
+                fileType: file.type || 'application/octet-stream',
+                data: file,
+                senderName: this.myName
+            });
+            
+            // Cleanup
+            this.pendingTransfers.delete(data.fileId);
+            
+            this.emit('transfer-progress', {
+                fileId: data.fileId,
+                peerId,
+                progress: 100,
+                direction: 'outgoing',
+                status: 'completed',
+                fileName: file.name,
+                fileSize: file.size,
+                fileType: file.type || 'application/octet-stream'
+            });
+        }
+    } else if (data.type === 'decline-transfer') {
+        const transfer = this.pendingTransfers.get(data.fileId);
+        if (transfer) {
+            this.pendingTransfers.delete(data.fileId);
+            this.emit('transfer-progress', {
+                fileId: data.fileId,
+                peerId,
+                progress: 0,
+                direction: 'outgoing',
+                status: 'declined',
+                fileName: transfer.file.name,
+                fileSize: transfer.file.size,
+                fileType: transfer.file.type || 'application/octet-stream'
+            });
+        }
     } else if (data.type === 'file-chunk') {
         const file = data.data;
         this.emit('file-received', {
             fileId: data.fileId,
             file: file,
-            peerId
+            fileName: data.fileName,
+            fileType: data.fileType,
+            peerId,
+            senderName: data.senderName // Propagate sender name
         });
     } else if (data.type === 'chat') {
         const msgId = data.id || crypto.randomUUID();
@@ -264,7 +359,8 @@ class PeerService extends EventEmitter {
         this.emit('chat-received', {
             peerId,
             text: data.payload,
-            id: msgId
+            id: msgId,
+            senderName: data.senderName // Propagate sender name
         });
     } else if (data.type === 'name-update') {
         this.emit('peer-updated', {
