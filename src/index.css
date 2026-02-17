@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-white text-black dark:bg-black dark:text-white antialiased overflow-hidden;
+    transition: background-color 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    margin: 0;
+  }
+}
+
+@layer utilities {
+  .animate-sonar {
+    animation: sonar 12s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+    will-change: transform, opacity;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    opacity: 0; /* Fix refresh glitch */
+    border: 0.5px solid rgba(59, 130, 246, 0.1); /* Light mode default */
+  }
+
+  .dark .animate-sonar {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+  
+  /* Staggered Delays for 8 Rings (1.5s interval) */
+  .delay-0 { animation-delay: 0s; }
+  .delay-1500 { animation-delay: 1.5s; }
+  .delay-3000 { animation-delay: 3s; }
+  .delay-4500 { animation-delay: 4.5s; }
+  .delay-6000 { animation-delay: 6s; }
+  .delay-7500 { animation-delay: 7.5s; }
+  .delay-9000 { animation-delay: 9s; }
+  .delay-10500 { animation-delay: 10.5s; }
+  
+  /* GPU Acceleration Helper */
+  .gpu-accelerated {
+    will-change: transform, opacity;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+
+  /* Keep ripple for footer if needed */
+  .animate-ripple {
+    animation: ripple 4s ease-out infinite;
+    will-change: transform, opacity;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+  }
+}
+
+@keyframes sonar {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    transform: scale(5.0);
+    opacity: 0;
+  }
+}
+
+@keyframes ripple {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(6);
+    opacity: 0.05;
+  }
+}

@@ -49,7 +49,7 @@ export class WebRTCService {
     
     // Debug ICE state
     this.peerConnection.oniceconnectionstatechange = () => {
-      console.log('ICE State:', this.peerConnection?.iceConnectionState);
+      // removed console.log
     };
   }
 
@@ -84,7 +84,7 @@ export class WebRTCService {
           this.emit('incoming-meta', { meta: this.incomingMeta!, peerId: 'peer-1' });
         }
       } catch (e) {
-        console.error('Failed to parse signaling message', e);
+        // failed to parse
       }
       return;
     }
@@ -98,88 +98,6 @@ export class WebRTCService {
       const progress = (this.receivedSize / this.incomingMeta.size) * 100;
       
       // Calculate speed
-      const now = Date.now();
-      const elapsed = (now - this.transferStartTime) / 1000;
-      const speedMbps = (this.receivedSize / (1024 * 1024)) / elapsed; 
-      
-      this.emit('progress', { 
-        id: this.incomingMeta.id, 
-        progress,
-        speed: `${speedMbps.toFixed(1)} MB/s`
-      });
-
-      if (this.receivedSize >= this.incomingMeta.size) {
-        const blob = new Blob(this.incomingBuffer, { type: this.incomingMeta.type });
-        this.emit('completed', { id: this.incomingMeta.id, file: blob, meta: this.incomingMeta });
-        this.incomingBuffer = [];
-        this.receivedSize = 0;
-        this.incomingMeta = null;
-      }
     }
   }
-
-  // Send File Logic
-  async sendFile(file: File) {
-    if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
-      throw new Error("Connection not open");
-    }
-
-    const meta: FileMeta = {
-      id: crypto.randomUUID(),
-      name: file.name,
-      size: file.size,
-      type: file.type
-    };
-
-    // 1. Send Metadata
-    this.dataChannel.send(JSON.stringify({ type: 'meta', payload: meta }));
-
-    // 2. Chunk and Send
-    const buffer = await file.arrayBuffer();
-    let offset = 0;
-    this.transferStartTime = Date.now();
-
-    const sendLoop = () => {
-      if (!this.dataChannel || this.dataChannel.readyState !== 'open') return;
-
-      // Create a bit of backpressure handling
-      if (this.dataChannel.bufferedAmount > 16 * 1024 * 1024) { // 16MB buffer limit
-        setTimeout(sendLoop, 50);
-        return;
-      }
-
-      while (offset < buffer.byteLength) {
-        if (this.dataChannel.bufferedAmount > 10 * 1024 * 1024) {
-          setTimeout(sendLoop, 10);
-          return;
-        }
-
-        const chunk = buffer.slice(offset, offset + CHUNK_SIZE);
-        this.dataChannel.send(chunk);
-        offset += CHUNK_SIZE;
-
-        const progress = Math.min((offset / file.size) * 100, 100);
-         // Calculate speed
-         const now = Date.now();
-         const elapsed = (now - this.transferStartTime) / 1000;
-         const sentMB = offset / (1024 * 1024);
-         const speed = elapsed > 0 ? (sentMB / elapsed).toFixed(1) + ' MB/s' : 'Calculating...';
-
-        this.emit('progress', { id: meta.id, progress, speed });
-      }
-
-      if (offset >= buffer.byteLength) {
-        this.emit('completed', { id: meta.id });
-      }
-    };
-
-    sendLoop();
-    return meta.id;
-  }
-
-  // Getters for integration
-  get rawConnection() { return this.peerConnection; }
 }
-
-// Singleton for simplicity in this demo, usually provided via Context
-export const webRTC = new WebRTCService();

@@ -1,7 +1,7 @@
 
 export const CHUNK_SIZE = 16 * 1024; // 16KB chunks
 export const MAX_DISCOVERY_SLOTS = 12;
-export const LOGO_URL = 'https://www.myqnap.org/wp-content/uploads/pairdrop-logo.png';
+export const LOGO_URL = 'https://official.balrampathak.com.np/web/image/1405-5153de8d/mero-drop.png';
 
 export const ANIMAL_NAMES = [
   'Silver Shark', 'Golden Finch', 'Neon Fox', 'Cosmic Whale', 'Swift Eagle',

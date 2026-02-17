@@ -1,30 +1,37 @@
+import React, { memo } from 'react';
 
-import React from 'react';
+interface RadarProps {
+  theme: 'light' | 'dark';
+}
 
-const Radar: React.FC = () => {
+const Radar: React.FC<RadarProps> = () => {
+  // Theme-adaptive ring color is now handled in index.css for better performance and clean separation
+  
   return (
-    <div className="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none -z-10 bg-black">
-      {/* 
-        PairDrop Radar: Static thin grey rings.
-        These are precisely spaced to cover the entire view.
-      */}
-      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((i) => (
-        <div
-          key={`ring-${i}`}
-          className="absolute rounded-full border border-[#ffffff10]"
-          style={{
-            width: `${i * 15}vw`,
-            height: `${i * 15}vw`,
-            minWidth: `${i * 150}px`,
-            minHeight: `${i * 150}px`,
-          }}
-        />
-      ))}
+    <div 
+      className="fixed bottom-0 left-1/2 z-[-1] pointer-events-none flex items-center justify-center gpu-accelerated"
+      style={{ 
+        transform: 'translate3d(-50%, 0, 0)', 
+        backfaceVisibility: 'hidden' 
+      }}
+    >
+      {/* Deep Sonar Rings - 8 Rings, 12s Cycle, Staggered 1.5s */}
+      {/* Container is centered on the bottom logo. Rings expand from this center. */}
+      <div className="relative flex items-center justify-center gpu-accelerated">
+        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-0" />
+        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-1500" />
+        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-3000" />
+        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-4500" />
+        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-6000" />
+        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-7500" />
+        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-9000" />
+        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-10500" />
+      </div>
       
-      {/* Subtle radial gradient to make the edges darker/softer */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.8)_80%)]" />
+      {/* Soft Center Glow - GPU Accelerated */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[1000px] bg-blue-500/[0.03] blur-[150px] rounded-full gpu-accelerated" />
     </div>
   );
 };
 
-export default Radar;
+export default memo(Radar);

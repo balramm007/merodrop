@@ -1,15 +1,14 @@
-
 // Use named import for Dexie to ensure proper class inheritance and type resolution for 'version' method.
 import { Dexie, type Table } from 'dexie';
 import { AppSettings, HistoryItem } from '../types';
 import { ANIMAL_NAMES } from '../constants';
 
-export class PairDropDB extends Dexie {
+export class MeroDropDB extends Dexie {
   settings!: Table<{ key: string; value: AppSettings }, string>;
   history!: Table<HistoryItem, string>;
 
   constructor() {
-    super('PairDropCloneDB');
+    super('MeroDropDB');
     // Defining database schema versions.
     this.version(1).stores({
       settings: 'key',
@@ -18,7 +17,7 @@ export class PairDropDB extends Dexie {
   }
 }
 
-export const db = new PairDropDB();
+export const db = new MeroDropDB();
 
 export const dbService = {
   async getSettings(): Promise<AppSettings> {
@@ -27,7 +26,7 @@ export const dbService = {
     
     const defaults: AppSettings = {
       deviceName: ANIMAL_NAMES[Math.floor(Math.random() * ANIMAL_NAMES.length)],
-      theme: 'dark'
+      theme: 'light'
     };
     await this.saveSettings(defaults);
     return defaults;
