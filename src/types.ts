@@ -23,6 +23,8 @@ export interface TransferState {
   peerId: string;
   peerName?: string;
   error?: string;
+  origin: 'main' | 'chat';
+  timestamp?: number;
 }
 
 export interface HistoryItem {
@@ -30,9 +32,14 @@ export interface HistoryItem {
   fileName: string;
   fileSize: number;
   fileType?: string;
+  text?: string; // For chat messages
   peerName: string;
+  peerId: string;
   timestamp: number;
   direction: 'incoming' | 'outgoing' | 'sent' | 'received';
+  origin?: 'main' | 'chat';
+  status?: 'pending' | 'transferring' | 'completed' | 'failed' | 'declined' | 'cancelled' | 'error';
+  progress?: number;
 }
 
 export interface FileMeta {

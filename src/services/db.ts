@@ -7,12 +7,19 @@ export class MeroDropDB extends Dexie {
   settings!: Table<{ key: string; value: AppSettings }, string>;
   history!: Table<HistoryItem, string>;
 
+  chunks!: Table<any, string>;
+
   constructor() {
     super('MeroDropDB');
-    // Defining database schema versions.
     this.version(1).stores({
       settings: 'key',
       history: 'id, timestamp'
+    });
+    
+    this.version(2).stores({
+      settings: 'key',
+      history: 'id, timestamp',
+      chunks: 'id'
     });
   }
 }
@@ -20,16 +27,9 @@ export class MeroDropDB extends Dexie {
 export const db = new MeroDropDB();
 
 export const dbService = {
-  async getSettings(): Promise<AppSettings> {
+  async getSettings(): Promise<AppSettings | undefined> {
     const entry = await db.settings.get('main');
-    if (entry) return entry.value;
-    
-    const defaults: AppSettings = {
-      deviceName: ANIMAL_NAMES[Math.floor(Math.random() * ANIMAL_NAMES.length)],
-      theme: 'light'
-    };
-    await this.saveSettings(defaults);
-    return defaults;
+    return entry?.value;
   },
 
   async saveSettings(settings: AppSettings): Promise<void> {
@@ -37,10 +37,28 @@ export const dbService = {
   },
 
   async addHistory(item: HistoryItem): Promise<void> {
-    await db.history.add(item);
+    await db.history.put(item);
+  },
+
+  async updateHistoryStatus(id: string, status: string): Promise<void> {
+    await db.history.update(id, { status: status as any });
   },
 
   async getHistory(): Promise<HistoryItem[]> {
     return await db.history.orderBy('timestamp').reverse().toArray();
+  },
+
+  async clearHistory(): Promise<void> {
+    await db.history.clear();
+  },
+
+  async clearChunks(): Promise<void> {
+    await db.chunks.clear();
+  },
+
+  async clearSessionData(): Promise<void> {
+    await db.history.clear();
+    await db.chunks.clear();
+    // We explicitly do NOT clear settings
   }
 };

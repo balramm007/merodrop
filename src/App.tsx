@@ -5,7 +5,7 @@ import { Pencil } from 'lucide-react';
 
 import PeerService from './services/peer';
 import { dbService } from './services/db';
-import { LOGO_URL, ANIMAL_NAMES } from './constants';
+import { LOGO_URL, SPLASH_LOGO_URL, ANIMAL_NAMES } from './constants';
 import { PeerData, TransferState, AppSettings } from './types';
 
 import Radar from './components/Radar';
@@ -23,6 +23,7 @@ const App: React.FC = () => {
   });
 
   const [isAppLoading, setIsAppLoading] = useState(true);
+  const [resourcesReady, setResourcesReady] = useState(false);
 
   const [peers, setPeers] = useState<Record<string, PeerData>>({});
   const [myId, setMyId] = useState<string | null>(null);
@@ -38,6 +39,7 @@ const App: React.FC = () => {
   // Chat State
   const [chatTarget, setChatTarget] = useState<PeerData | null>(null);
   const [incomingChats, setIncomingChats] = useState<{ peer: PeerData; text: string; id: string }[]>([]);
+  const [typingPeers, setTypingPeers] = useState<Set<string>>(new Set());
 
   // Identity UI State
   const [isEditingName, setIsEditingName] = useState(false);
@@ -51,10 +53,28 @@ const App: React.FC = () => {
 
   // --- Initialization ---
   useEffect(() => {
-    // Splash Screen Timer
-    const timer = setTimeout(() => setIsAppLoading(false), 1500);
-    return () => clearTimeout(timer);
+    // 1. Preload Splash Logo
+    const img = new Image();
+    img.src = SPLASH_LOGO_URL;
+    img.onload = () => {
+      // 2. Double-RAF to ensure browser painting is ready before starting timer
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+           setResourcesReady(true);
+        });
+      });
+    };
   }, []);
+
+  useEffect(() => {
+    // 2. Splash Screen Timer + Resource Check
+    if (resourcesReady) {
+      // Wait for at least the pop animation to finish + hold (2000ms total)
+      // This ensures we don't cut the animation short even if resources load instantly
+      const timer = setTimeout(() => setIsAppLoading(false), 2000); 
+      return () => clearTimeout(timer);
+    }
+  }, [resourcesReady]);
 
   // Sync theme with HTML class whenever it changes
   useEffect(() => {
@@ -68,6 +88,9 @@ const App: React.FC = () => {
   useEffect(() => {
     // 1. Load Settings
     const loadSettings = async () => {
+      // Clean up privacy data on mount (Session Only)
+      await dbService.clearSessionData();
+
       const saved = await dbService.getSettings();
       if (saved) {
         setSettings(prev => ({ ...prev, ...saved }));
@@ -123,8 +146,25 @@ const App: React.FC = () => {
         progress: 0,
         speed: 0,
         status: 'pending',
-        direction: 'incoming'
+        direction: 'incoming',
+        origin: data.origin // Set origin from metadata
       });
+
+      // If origin is chat, add a pending history item so it shows in chat bubble
+      if (data.origin === 'chat') {
+         dbService.addHistory({
+            id: data.fileId,
+            fileName: data.fileName,
+            fileSize: data.fileSize,
+            fileType: data.fileType || 'application/octet-stream',
+            peerName: senderName,
+            peerId: data.peerId,
+            timestamp: Date.now(),
+            direction: 'incoming',
+            origin: 'chat',
+            status: 'pending'
+         });
+      }
     };
 
     const handleTransferProgress = (data: any) => {
@@ -137,8 +177,9 @@ const App: React.FC = () => {
     };
 
     const handleFileReceived = (data: any) => {
-      // FIX: Use metadata for Blob creation
-      const blob = new Blob([data.file], { type: data.fileType || 'application/octet-stream' });
+      // FIX: Use new Blob([data.file]) to prevent .txt extension bug
+      // We rely on the download attribute for the filename and extension
+      const blob = new Blob([data.file]);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -157,6 +198,7 @@ const App: React.FC = () => {
         fileSize: data.file.size || 0,
         fileType: data.fileType || 'application/octet-stream',
         peerName: peer ? peer.name : 'Unknown',
+        peerId: data.peerId, // Added peerId
         timestamp: Date.now(),
         direction: 'incoming'
       });
@@ -165,9 +207,9 @@ const App: React.FC = () => {
       setActiveTransfer(null);
     };
 
-  const handleChatReceived = (data: { peerId: string, text: string, id: string }) => {
-        // Deduplication using Set
-        if (processedChatIds.current.has(data.id)) return;
+  const handleChatReceived = (data: any) => {
+        // Deduplication using Set and Ref
+        if (processedChatIds.current.has(data.id) || lastProcessedMessageId.current === data.id) return;
         processedChatIds.current.add(data.id);
         
         lastProcessedMessageId.current = data.id;
@@ -176,12 +218,15 @@ const App: React.FC = () => {
         setPeers(currentPeers => {
             const sender = currentPeers[data.peerId] || { id: data.peerId, name: 'Unknown', device: 'Unknown', deviceType: 'desktop' };
             
+            // 3. Save to history
             dbService.addHistory({
               id: data.id,
-              fileName: 'Chat Message', // Using fileName field for chat label
+              fileName: 'Chat Message',
+              text: data.text,
               fileSize: data.text.length,
               fileType: 'text/plain',
-              peerName: sender.name,
+              peerName: data.senderName || sender.name || 'Unknown', // Use propagated sender name
+              peerId: data.peerId, // Added peerId
               timestamp: Date.now(),
               direction: 'incoming'
             });
@@ -204,28 +249,63 @@ const App: React.FC = () => {
         });
     };
 
+    const handleTypingUpdate = ({ peerId, isTyping }: { peerId: string; isTyping: boolean }) => {
+      setTypingPeers(prev => {
+        const newSet = new Set(prev);
+        if (isTyping) {
+          newSet.add(peerId);
+        } else {
+          newSet.delete(peerId);
+        }
+        return newSet;
+      });
+    };
+
     // 4. Subscribe
     PeerService.on('open', handleOpen);
     PeerService.on('peer-found', handlePeerFound);
-    PeerService.on('peer-updated', handlePeerUpdated);
     PeerService.on('peer-disconnected', handlePeerDisconnected);
     PeerService.on('incoming-file-request', handleIncomingFileRequest);
     PeerService.on('transfer-progress', handleTransferProgress);
     PeerService.on('file-received', handleFileReceived);
     PeerService.on('chat-received', handleChatReceived);
+    PeerService.on('peer-updated', handlePeerUpdated);
+    PeerService.on('typing-update', handleTypingUpdate);
 
     // 5. Cleanup
     return () => {
       PeerService.off('open', handleOpen);
       PeerService.off('peer-found', handlePeerFound);
-      PeerService.off('peer-updated', handlePeerUpdated);
       PeerService.off('peer-disconnected', handlePeerDisconnected);
       PeerService.off('incoming-file-request', handleIncomingFileRequest);
       PeerService.off('transfer-progress', handleTransferProgress);
       PeerService.off('file-received', handleFileReceived);
       PeerService.off('chat-received', handleChatReceived);
+      PeerService.off('peer-updated', handlePeerUpdated);
+      PeerService.off('typing-update', handleTypingUpdate);
     };
-  }, [showOnboarding, myId]); 
+  }, [showOnboarding, settings.deviceName]); 
+
+  // File Transfer Auto-Dismiss
+  useEffect(() => {
+    // Dismiss if completed, error, or declined
+    if (activeTransfer && ['completed', 'error', 'declined', 'cancelled'].includes(activeTransfer.status)) {
+      const timer = setTimeout(() => {
+        setActiveTransfer(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTransfer?.status]);
+
+  // Chat Auto-Dismiss (15s)
+  useEffect(() => {
+    if (incomingChats.length > 0) {
+      const timer = setTimeout(() => {
+        setIncomingChats([]);
+      }, 15000);
+      return () => clearTimeout(timer);
+    }
+  }, [incomingChats]); 
 
   // --- Handlers ---
   
@@ -244,7 +324,8 @@ const App: React.FC = () => {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && selectedPeerId.current) {
-      const fileId = PeerService.sendFile(file, selectedPeerId.current);
+      // ORIGIN: 'main'
+      const fileId = PeerService.sendFile(file, selectedPeerId.current, 'main');
       
       if (fileId) {
           const targetPeer = peers[selectedPeerId.current];
@@ -258,7 +339,8 @@ const App: React.FC = () => {
             progress: 0,
             speed: 0,
             status: 'pending', // Waiting for acceptance
-            direction: 'outgoing'
+            direction: 'outgoing',
+            origin: 'main'
           });
           
           toast.success(`Requesting to send ${file.name}...`);
@@ -281,19 +363,54 @@ const App: React.FC = () => {
     toast.success("Identity Updated");
   };
 
-  const handleAcceptTransfer = () => {
+  const handleAcceptTransfer = (fileId?: string, peerId?: string) => {
+    // 1. Specific Transfer (e.g. from Chat)
+    if (fileId && peerId) {
+        PeerService.acceptTransfer(fileId, peerId);
+        // Also update activeTransfer if it matches
+        if (activeTransfer && activeTransfer.fileId === fileId) {
+            setActiveTransfer(prev => prev ? { ...prev, status: 'transferring' } : null);
+        }
+        return;
+    }
+
+    // 2. Global Active Transfer
     if (!activeTransfer) return;
     PeerService.acceptTransfer(activeTransfer.fileId, activeTransfer.peerId);
     setActiveTransfer(prev => prev ? { ...prev, status: 'transferring' } : null);
   };
 
-  const handleDeclineTransfer = () => {
+  const handleDeclineTransfer = (fileId?: string, peerId?: string) => {
+    // 1. Specific Transfer
+    if (fileId && peerId) {
+        PeerService.declineTransfer(fileId, peerId);
+        dbService.updateHistoryStatus(fileId, 'declined');
+         if (activeTransfer && activeTransfer.fileId === fileId) {
+            setActiveTransfer(null);
+        }
+        return;
+    }
+
+    // 2. Global Active Transfer
     if (!activeTransfer) return;
     PeerService.declineTransfer(activeTransfer.fileId, activeTransfer.peerId);
+    dbService.updateHistoryStatus(activeTransfer.fileId, 'declined');
     setActiveTransfer(null);
   };
 
   const peerList = useMemo(() => Object.values(peers), [peers]);
+
+  // Group incoming chats by peer for Stacked UI
+  const groupedChats = useMemo(() => {
+    const groups: Record<string, typeof incomingChats> = {};
+    incomingChats.forEach(chat => {
+      if (!groups[chat.peer.id]) {
+        groups[chat.peer.id] = [];
+      }
+      groups[chat.peer.id].push(chat);
+    });
+    return groups;
+  }, [incomingChats]);
 
   // --- Render ---
   return (
@@ -303,9 +420,9 @@ const App: React.FC = () => {
       ) : (
         <motion.div
           key="app"
-          initial={{ opacity: 0, scale: 0.98 }}
+          initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+          transition={{ duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
           className="h-full w-full"
         >
           <Layout 
@@ -409,67 +526,63 @@ const App: React.FC = () => {
               onChange={handleFileSelect} 
             />
 
-            {/* Main Content */}
-            <div className="relative w-full h-full flex flex-col mt-24 mb-32 min-h-[calc(100vh-12rem)] overflow-hidden z-10">
-              <div className="flex-1 flex flex-col items-center justify-center">
-                <AnimatePresence mode="wait">
-                  {peerList.length === 0 ? (
-                    <motion.div 
-                      key="waiting"
-                      initial={{ opacity: 0, y: 20 }} 
-                      animate={{ opacity: 1, y: 0 }} 
-                      exit={{ opacity: 0, y: -20 }}
-                      transition={{ duration: 0.3 }}
-                      className="flex flex-col items-center justify-center -translate-y-[200px] gpu-accelerated"
-                    >
-                      <h1 className={`text-4xl font-bold mb-4 transition-colors duration-300 ${settings.theme === 'light' ? 'text-[#000000]' : 'text-white'}`}>Waiting for users...</h1>
-                      <p className={`text-xl font-medium transition-colors duration-300 ${settings.theme === 'light' ? 'text-[#000000]' : 'text-white'}`}>MeroDrop is searching for nearby devices</p>
-                    </motion.div>
-                  ) : (
-                    <motion.div 
-                      key="active"
-                      initial={{ opacity: 0, y: -20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -20 }}
-                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                      className="w-full flex flex-col items-center gpu-accelerated"
-                      style={{ willChange: 'transform' }}
-                    >
-                      {/* Header */}
-                      <div className="w-full flex flex-col items-center px-6 pointer-events-none select-none flex-shrink-0">
-                        <motion.h1 
-                          layout
-                          className={`text-[clamp(1.8rem,5vw,3.5rem)] font-bold text-center mb-4 leading-tight drop-shadow-2xl transition-colors duration-300 ${settings.theme === 'light' ? 'text-[#000000]' : 'text-[#FFFFFF]'}`}
-                        >
-                          Open MeroDrop to share files easily!
-                        </motion.h1>
-                        <motion.p 
-                          layout
-                          className="text-[#9aa0a6] text-[clamp(1rem,3vw,1.25rem)] max-w-2xl text-center font-semibold transition-colors duration-300"
-                        >
-                          Simple, Fast, Private Sharing
-                        </motion.p>
-                      </div>
+            {/* Global Background Radar - Fixed Position via CSS */}
+            <Radar theme={settings.theme} />
 
-                      {/* Peer Grid */}
-                      <div className="w-full px-8 flex items-center justify-center overflow-hidden mt-10">
-                        <motion.div layout className="flex flex-wrap justify-center items-center gap-12 md:gap-20 max-w-[1200px] mx-auto w-full py-10">
-                          <AnimatePresence mode="popLayout">
-                            {peerList.map((peer) => (
-                              <PeerAvatar 
-                                key={peer.id} 
-                                peer={peer} 
-                                onClick={(p) => { selectedPeerId.current = p.id; fileInputRef.current?.click(); }} 
-                                onContextMenu={(e, p) => setChatTarget(p)} 
-                                isCompact={peerList.length >= 10}
-                              />
-                            ))}
-                          </AnimatePresence>
-                        </motion.div>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+            {/* Main Content */}
+            <div className="relative w-full h-full flex flex-col min-h-[calc(100vh-12rem)] overflow-hidden z-10">
+              <div className="flex-1 flex flex-col items-center justify-center pb-20">
+                
+                {/* Header Section - Slides up when peers are found */}
+                <motion.div
+            layout
+            initial={{ y: 0, scale: 1 }}
+            animate={{ 
+                y: peerList.length > 0 ? -200 : 0, 
+                scale: peerList.length > 0 ? 0.6 : 1 
+            }}
+            transition={{ type: "spring", stiffness: 260, damping: 20 }}
+            className="flex flex-col items-center z-20 relative max-w-4xl px-4 will-change-transform gpu-accelerated"
+        >
+            <h1 className={`text-4xl md:text-6xl font-bold mb-6 text-center tracking-tight transition-colors duration-300 leading-tight ${settings.theme === 'light' ? 'text-[#000000]' : 'text-[#ffffff]'}`}>
+                Open MeroDrop to share files easily!
+            </h1>
+            <p className="text-lg md:text-2xl text-gray-500 dark:text-gray-400 font-medium max-w-md text-center">
+                Simple, Fast, Private Sharing
+            </p>
+        </motion.div>
+
+                {/* Dynamic Content Area */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <AnimatePresence mode="wait">
+                        {peerList.length === 0 ? (
+                            null
+                        ) : (
+                            <motion.div 
+                                key="grid"
+                                initial={{ opacity: 0, y: 50 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 50 }}
+                                className="w-full px-8 flex items-center justify-center pointer-events-auto mt-20"
+                            >
+                                <div className="flex flex-wrap justify-center items-center gap-12 md:gap-20 max-w-[1200px] mx-auto w-full">
+                                    <AnimatePresence mode="popLayout">
+                                        {peerList.map((peer) => (
+                                            <PeerAvatar 
+                                                key={peer.id} 
+                                                peer={peer} 
+                                                onClick={(p) => { selectedPeerId.current = p.id; fileInputRef.current?.click(); }} 
+                                                onContextMenu={(e, p) => setChatTarget(p)}
+                                                isCompact={peerList.length >= 10}
+                                            />
+                                        ))}
+                                    </AnimatePresence>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
+
               </div>
             </div>
 
@@ -477,10 +590,11 @@ const App: React.FC = () => {
             <div className="fixed bottom-0 inset-x-0 flex flex-col items-center justify-end z-50 pointer-events-none pb-8">
               
               {/* Logo with 4 High-Energy Rings */}
-              <div className="relative mb-4 pointer-events-auto cursor-pointer group" onClick={() => { setTempName(settings.deviceName); setIsEditingName(true); }}>
-                {/* Radar Anchored to Logo */}
+              <div className="relative mb-4 pointer-events-auto group">
+                {/* Global Radar Anchored Here */}
                 <Radar theme={settings.theme} />
                 
+                {/* Ripple Animations */}
                 <div className="absolute inset-0 bg-blue-500/30 rounded-full animate-ripple" style={{ animationDelay: '0s', willChange: 'transform, opacity' }} />
                 <div className="absolute inset-0 bg-blue-500/30 rounded-full animate-ripple" style={{ animationDelay: '1s', willChange: 'transform, opacity' }} />
                 <div className="absolute inset-0 bg-blue-500/30 rounded-full animate-ripple" style={{ animationDelay: '2s', willChange: 'transform, opacity' }} />
@@ -517,12 +631,12 @@ const App: React.FC = () => {
             {/* Identity Editor Modal */}
             <AnimatePresence>
               {isEditingName && (
-                <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xl">
+                <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/30 backdrop-blur-2xl">
                   <motion.div 
                       initial={{ scale: 0.9, opacity: 0 }} 
                       animate={{ scale: 1, opacity: 1 }} 
                       exit={{ scale: 0.9, opacity: 0 }} 
-                      className="bg-[#1c1c1e] w-full max-w-md rounded-[32px] border border-white/10 p-10 flex flex-col items-center"
+                      className="bg-[#1c1c1e]/80 backdrop-blur-xl w-full max-w-md rounded-[32px] border border-white/10 p-10 flex flex-col items-center shadow-2xl"
                   >
                     <h2 className="text-3xl font-black text-white mb-2 transition-colors duration-300">Change Identity</h2>
                     <input 
@@ -535,8 +649,8 @@ const App: React.FC = () => {
                       onKeyDown={(e) => e.key === 'Enter' && saveIdentity()} 
                     />
                     <div className="flex w-full gap-4">
-                      <button onClick={() => setIsEditingName(false)} className="flex-1 py-4 bg-[#2c2c2e] text-[#9aa0a6] font-bold rounded-full transition-colors duration-300">Cancel</button>
-                      <button onClick={saveIdentity} className="flex-1 py-4 bg-primary text-white font-bold rounded-full flex items-center justify-center gap-2 transition-colors duration-300">Save</button>
+                      <button onClick={() => setIsEditingName(false)} className="flex-1 py-4 bg-[#2c2c2e] text-[#9aa0a6] font-bold rounded-full transition-colors duration-300 hover:bg-[#3a3a3c]">Cancel</button>
+                      <button onClick={saveIdentity} className="flex-1 py-4 bg-gradient-to-r from-blue-900 to-green-900 text-white font-bold rounded-full flex items-center justify-center gap-2 transition-all duration-300 hover:shadow-lg hover:shadow-blue-900/20 active:scale-95">Save</button>
                     </div>
                   </motion.div>
                 </div>
@@ -550,13 +664,48 @@ const App: React.FC = () => {
               onSendMessage={(text) => {
                 if (!chatTarget) return;
                 PeerService.sendChat(text, chatTarget.id);
-                setChatTarget(null);
               }}
+              onAcceptFile={(fileId) => {
+                 if (!chatTarget) return;
+                 handleAcceptTransfer(fileId, chatTarget.id);
+              }}
+              onDeclineFile={(fileId) => {
+                 if (!chatTarget) return;
+                 handleDeclineTransfer(fileId, chatTarget.id);
+              }}
+              onSendFile={(file) => {
+                if (!chatTarget) return undefined;
+                // ORIGIN: 'chat'
+                const fileId = PeerService.sendFile(file, chatTarget.id, 'chat');
+                if (fileId) {
+                    // We do NOT set activeTransfer here to avoid the main popup!
+                    // Chat handles its own UI via HistoryItem
+                    
+                    toast.success(`Sending ${file.name}...`);
+                    
+                    // Add to local history with origin 'chat'
+                    dbService.addHistory({
+                        id: fileId,
+                        fileName: file.name,
+                        text: '', // Empty for file
+                        fileSize: file.size,
+                        fileType: file.type || 'application/octet-stream',
+                        peerName: chatTarget.name,
+                        peerId: chatTarget.id,
+                        timestamp: Date.now(),
+                        direction: 'outgoing',
+                        origin: 'chat',
+                        status: 'pending'
+                    });
+                }
+                return fileId;
+              }}
+              isTyping={chatTarget ? typingPeers.has(chatTarget.id) : false}
             />
 
-            {/* File Progress */}
+            {/* File Progress (Only show if origin is 'main') */}
             <AnimatePresence>
-              {activeTransfer && (
+              {activeTransfer && activeTransfer.origin === 'main' && (
                 <FileProgress 
                   transfer={activeTransfer} 
                   onAccept={handleAcceptTransfer}
@@ -566,32 +715,62 @@ const App: React.FC = () => {
               )}
             </AnimatePresence>
 
-            {/* Incoming Chat Bubbles */}
-            <div className="fixed top-24 right-6 z-[60] flex flex-col gap-4 pointer-events-none">
+            {/* Incoming Chat Stacks */}
+            <div className="fixed top-24 right-4 md:right-8 z-[60] flex flex-col gap-6 pointer-events-none items-end max-w-[calc(100vw-32px)]">
               <AnimatePresence mode="popLayout">
-                {incomingChats.map((chat) => (
-                  <motion.div
-                    key={chat.id}
-                    layout
-                    initial={{ x: 100, opacity: 0, scale: 0.9 }}
-                    animate={{ x: 0, opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
-                    className="bg-[#1c1c1e]/90 backdrop-blur-md border border-white/10 p-4 rounded-[20px] shadow-2xl max-w-xs cursor-pointer pointer-events-auto gpu-accelerated origin-right"
-                    style={{ willChange: 'transform, opacity' }}
-                    onClick={() => {
-                        setChatTarget(chat.peer);
-                        setIncomingChats(prev => prev.filter(c => c.id !== chat.id));
-                    }}
-                  >
-                      <div className="flex items-center gap-2 mb-1">
-                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-[10px]">
-                              {chat.peer.name[0]}
+                {Object.entries(groupedChats).map(([peerId, chats]) => {
+                  const latestChat = chats[chats.length - 1];
+                  const count = chats.length;
+                  
+                  return (
+                    <motion.div
+                      key={peerId}
+                      layout
+                      initial={{ x: 100, opacity: 0, scale: 0.8 }}
+                      animate={{ x: 0, opacity: 1, scale: 1 }}
+                      exit={{ x: 100, opacity: 0, scale: 0.8 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      className="relative cursor-pointer pointer-events-auto group perspective-1000"
+                      onClick={() => {
+                        setChatTarget(latestChat.peer);
+                        // Clear chats for this peer as we are opening the dialog
+                        setIncomingChats(prev => prev.filter(c => c.peer.id !== peerId));
+                      }}
+                    >
+                      {/* Visual Stack Layers */}
+                      {count > 1 && (
+                         <div className="absolute top-1 left-1 w-full h-full bg-white/10 dark:bg-white/5 rounded-[24px] border border-white/5 -z-10 transform translate-x-1 translate-y-1" />
+                      )}
+                      {count > 2 && (
+                         <div className="absolute top-2 left-2 w-full h-full bg-white/5 dark:bg-white/5 rounded-[24px] border border-white/5 -z-20 transform translate-x-2 translate-y-2" />
+                      )}
+
+                      <div className="bg-[#1c1c1e]/90 backdrop-blur-md border border-white/10 p-5 rounded-[24px] shadow-2xl w-full max-w-[340px] md:w-80 transition-transform group-hover:scale-[1.02] group-active:scale-95">
+                          <div className="flex items-center gap-3 mb-3">
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-sm shadow-inner shrink-0">
+                                  {latestChat.peer.name[0]}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="text-white font-bold text-[15px] block truncate">{latestChat.peer.name}</span>
+                                    {count > 1 && (
+                                      <span className="bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg shadow-blue-500/40 shrink-0">
+                                        {count}
+                                      </span>
+                                    )}
+                                </div>
+                                <span className="text-gray-400 text-xs font-medium">
+                                  {latestChat.peer.deviceType || 'Device'}
+                                </span>
+                              </div>
                           </div>
-                          <span className="text-white font-bold text-xs">{chat.peer.name}</span>
+                          <p className="text-gray-200 text-[15px] font-medium leading-relaxed line-clamp-2 pl-1">
+                            {latestChat.text}
+                          </p>
                       </div>
-                      <p className="text-gray-200 text-sm font-medium leading-snug">{chat.text}</p>
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  );
+                })}
               </AnimatePresence>
             </div>
           </Layout>

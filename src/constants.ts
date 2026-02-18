@@ -2,6 +2,7 @@
 export const CHUNK_SIZE = 16 * 1024; // 16KB chunks
 export const MAX_DISCOVERY_SLOTS = 24; // Increased slots for better collision avoidance
 export const LOGO_URL = 'https://official.balrampathak.com.np/web/image/1416-4e563daf/mero-drop-logo.webp';
+export const SPLASH_LOGO_URL = 'https://official.balrampathak.com.np/web/image/1415-70dfba13/mero-drop.webp';
 
 export const ANIMAL_NAMES = [
   'Silver Shark', 'Golden Finch', 'Neon Fox', 'Cosmic Whale', 'Swift Eagle',

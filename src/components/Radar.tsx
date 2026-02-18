@@ -4,27 +4,41 @@ interface RadarProps {
   theme: 'light' | 'dark';
 }
 
-const Radar: React.FC<RadarProps> = () => {
+const Radar: React.FC<RadarProps> = ({ theme }) => {
+  // Theme-aware border color
+  // Light: Subtle Black (0.08)
+  // Dark: Subtle White (0.12)
+  const borderColor = theme === 'light' 
+    ? 'rgba(0, 0, 0, 0.08)' 
+    : 'rgba(255, 255, 255, 0.12)';
+
+  const delays = [0, 1500, 3000, 4500, 6000, 7500, 9000, 10500];
+
   return (
     <div 
-      className="absolute inset-0 z-[-1] pointer-events-none flex items-center justify-center gpu-accelerated"
-      style={{ 
-        transform: 'translateZ(0)', 
-        backfaceVisibility: 'hidden' 
-      }}
+        className="absolute top-1/2 left-1/2 w-[3000px] h-[3000px] pointer-events-none z-[-1] overflow-visible"
+        style={{
+            willChange: 'transform',
+            transform: 'translate(-50%, -50%) translateZ(0)' // GPU acceleration
+        }}
     >
-      {/* Deep Sonar Rings - 5 Rings, 12s Cycle, Staggered 2.4s */}
-      {/* Container is centered on the bottom logo. Rings expand from this center. */}
-      <div className="relative flex items-center justify-center gpu-accelerated">
-        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-0" style={{ willChange: 'transform' }} />
-        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-2400" style={{ willChange: 'transform' }} />
-        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-4800" style={{ willChange: 'transform' }} />
-        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-7200" style={{ willChange: 'transform' }} />
-        <div className="absolute w-[300px] h-[300px] rounded-full animate-sonar delay-9600" style={{ willChange: 'transform' }} />
+      {/* Deep Sonar Rings - 8 Rings, 12s Cycle, Staggered 1.5s */}
+      <div className="relative w-full h-full flex items-center justify-center">
+        {delays.map((delay) => (
+          <div 
+            key={delay}
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px]"
+          >
+             <div 
+                className="w-full h-full rounded-full animate-sonar border box-border opacity-0"
+                style={{ 
+                  borderColor: borderColor,
+                  animationDelay: `${delay}ms`,
+                }} 
+             />
+          </div>
+        ))}
       </div>
-      
-      {/* Soft Center Glow - GPU Accelerated */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[1000px] h-[1000px] bg-blue-500/[0.03] blur-[150px] rounded-full gpu-accelerated" />
     </div>
   );
 };

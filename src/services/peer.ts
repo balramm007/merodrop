@@ -126,12 +126,27 @@ class PeerService extends EventEmitter {
     });
   }
 
-  private discoverPeers(ipHash: string, mySlot: number) {
-    for (let i = 0; i < MAX_DISCOVERY_SLOTS; i++) {
-      if (i === mySlot) continue;
-      const targetId = `merodrop-${ipHash}-${i}`;
-      // Stagger connections slightly to avoid rate limiting
-      setTimeout(() => this.connect(targetId), i * 50);
+  private async discoverPeers(ipHash: string, mySlot: number) {
+    const batchSize = 5;
+    const delay = 200;
+
+    for (let i = 0; i < MAX_DISCOVERY_SLOTS; i += batchSize) {
+      // Create a batch of slots to scan
+      const batch = [];
+      for (let j = 0; j < batchSize && (i + j) < MAX_DISCOVERY_SLOTS; j++) {
+        const slot = i + j;
+        if (slot === mySlot) continue;
+        batch.push(slot);
+      }
+
+      // Connect to this batch
+      batch.forEach(slot => {
+        const targetId = `merodrop-${ipHash}-${slot}`;
+        this.connect(targetId);
+      });
+
+      // Wait before next batch to prevent browser freeze/crash
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
 
@@ -150,10 +165,21 @@ class PeerService extends EventEmitter {
       }
     });
     
+    // Immediate cleanup on error for outgoing connections
+    conn.on('error', () => {
+        conn.close();
+        this.connections.delete(peerId);
+    });
+    
+    // Also cleanup if it closes immediately
+    conn.on('close', () => {
+        this.connections.delete(peerId);
+    });
+
     this.handleConnection(conn);
   }
 
-  public sendFile(file: File, peerId: string) {
+  public sendFile(file: File, peerId: string, origin: 'main' | 'chat') {
     const conn = this.connections.get(peerId);
     if (!conn) return;
 
@@ -169,7 +195,8 @@ class PeerService extends EventEmitter {
       fileName: file.name,
       fileSize: file.size,
       fileType: file.type || 'application/octet-stream',
-      senderName: this.myName
+      senderName: this.myName,
+      origin: origin // Propagate origin
     });
 
     this.emit('transfer-progress', {
@@ -180,7 +207,8 @@ class PeerService extends EventEmitter {
       status: 'pending', // Waiting for acceptance
       fileName: file.name,
       fileSize: file.size,
-      fileType: file.type || 'application/octet-stream'
+      fileType: file.type || 'application/octet-stream',
+      origin: origin // Set origin
     });
     
     return fileId;
@@ -207,6 +235,15 @@ class PeerService extends EventEmitter {
       payload: text, 
       id,
       senderName: this.myName 
+    });
+  }
+
+  public sendTyping(peerId: string, isTyping: boolean) {
+    const conn = this.connections.get(peerId);
+    if (!conn) return;
+    conn.send({
+      type: 'typing',
+      isTyping
     });
   }
 
@@ -296,7 +333,8 @@ class PeerService extends EventEmitter {
     } else if (data.type === 'file-metadata') {
       this.emit('incoming-file-request', {
         ...data,
-        peerId
+        peerId,
+        origin: data.origin || 'main' // Default to main if not present (backward compatibility)
       });
     } else if (data.type === 'accept-transfer') {
         const transfer = this.pendingTransfers.get(data.fileId);
@@ -366,6 +404,11 @@ class PeerService extends EventEmitter {
         this.emit('peer-updated', {
             id: peerId,
             name: data.name
+        });
+    } else if (data.type === 'typing') {
+        this.emit('typing-update', {
+            peerId,
+            isTyping: data.isTyping
         });
     }
   }

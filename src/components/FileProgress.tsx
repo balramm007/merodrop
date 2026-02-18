@@ -40,19 +40,18 @@ const FileProgress: React.FC<FileProgressProps> = ({ transfer, onAccept, onDecli
   const isIncoming = transfer.direction === 'incoming';
   
   // iOS-style spring transition
-  const springTransition = { type: "spring", stiffness: 350, damping: 25 };
+  const springTransition = { type: "spring", stiffness: 350, damping: 25 } as const;
 
   return (
-    <AnimatePresence>
-      <motion.div
-        layout
-        initial={{ y: 120, opacity: 0, scale: 0.9 }}
-        animate={{ y: 0, opacity: 1, scale: 1 }}
-        exit={{ y: 120, opacity: 0, scale: 0.9 }}
-        transition={springTransition}
-        className="fixed bottom-6 inset-x-4 md:inset-auto md:bottom-8 md:right-8 md:w-[400px] bg-white/90 dark:bg-[#1c1c1e]/90 backdrop-blur-3xl rounded-[28px] shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-white/20 dark:border-white/10 z-[100] overflow-hidden"
-      >
-        <div className="p-5">
+    <motion.div
+      layout
+      initial={{ y: 120, opacity: 0, scale: 0.9 }}
+      animate={{ y: 0, opacity: 1, scale: 1 }}
+      exit={{ x: 400, opacity: 0, scale: 0.95 }} // Slide to right off-screen
+      transition={springTransition}
+      className="fixed bottom-6 inset-x-4 md:inset-auto md:bottom-8 md:right-8 md:w-[400px] bg-white/90 dark:bg-[#1c1c1e]/90 backdrop-blur-3xl rounded-[28px] shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-white/20 dark:border-white/10 z-[100] overflow-hidden"
+    >
+      <div className="p-5">
           {/* Header Section */}
           <div className="flex items-center space-x-4 mb-6">
             <div className="relative flex-shrink-0">
@@ -131,7 +130,6 @@ const FileProgress: React.FC<FileProgressProps> = ({ transfer, onAccept, onDecli
           )}
         </div>
       </motion.div>
-    </AnimatePresence>
   );
 };
 
