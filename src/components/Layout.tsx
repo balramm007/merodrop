@@ -31,7 +31,10 @@ const Layout: React.FC<LayoutProps> = ({ children, settings, toggleTheme, onOpen
           className="pointer-events-auto cursor-pointer select-none hardware-accelerated"
           style={{ willChange: 'transform' }}
         >
-          <div className="frosted-glass rounded-full px-5 py-2.5 flex items-center gap-3 border shadow-2xl transition-all hover:scale-105 active:scale-95">
+          <div
+            className="frosted-glass rounded-full px-5 py-2.5 flex items-center gap-3 border shadow-2xl transition-all hover:scale-105 active:scale-95"
+            style={{ backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+          >
             <img 
               src={LOGO_URL} 
               alt="MeroDrop" 

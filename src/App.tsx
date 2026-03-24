@@ -432,9 +432,15 @@ const App: React.FC = () => {
           <Layout
             settings={settings}
             toggleTheme={() => {
-              const newTheme = settings.theme === 'dark' ? 'light' : 'dark';
-              setSettings(prev => ({ ...prev, theme: newTheme }));
-              dbService.saveSettings({ ...settings, theme: newTheme });
+              const newTheme = (settings.theme === 'dark' ? 'light' : 'dark') as 'light' | 'dark';
+              const next: AppSettings = { ...settings, theme: newTheme };
+              setSettings(next);
+              localStorage.setItem('mero-theme', newTheme);
+              const prev = (window as any).__themeWriteTimer;
+              if (prev) clearTimeout(prev);
+              (window as any).__themeWriteTimer = setTimeout(() => {
+                dbService.saveSettings(next);
+              }, 2000);
             }}
             onOpenSettings={() => { }}
             onOpenHistory={() => { }}
@@ -702,7 +708,7 @@ const App: React.FC = () => {
                       <button
                         onClick={saveIdentity}
                         className="flex-1 py-4 rounded-full font-black text-white text-[15px] tracking-tight transition-all duration-200 hover:brightness-125 active:scale-95 shadow-lg"
-                        style={{ background: '#030357' }}
+                        style={{ background: '#58cc02' }}
                       >
                         Save
                       </button>
