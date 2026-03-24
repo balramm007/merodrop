@@ -5,8 +5,8 @@ import { TransferState } from '../types';
 
 interface FileProgressProps {
   transfer: TransferState;
-  onAccept: () => void;
-  onDecline: () => void;
+  onAccept: (fileId: string, peerId: string) => void;
+  onDecline: (fileId: string, peerId: string) => void;
   onClose: () => void;
 }
 
@@ -15,6 +15,9 @@ const FileProgress: React.FC<FileProgressProps> = ({ transfer, onAccept, onDecli
   const barRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
   const currentProgress = useRef(transfer.progress);
+  
+  const handleAccept = () => onAccept(transfer.fileId, transfer.peerId);
+  const handleDecline = () => onDecline(transfer.fileId, transfer.peerId);
   
   useEffect(() => {
     let animationId: number;
@@ -88,14 +91,14 @@ const FileProgress: React.FC<FileProgressProps> = ({ transfer, onAccept, onDecli
             <div className="grid grid-cols-2 gap-3">
               <motion.button
                 whileTap={{ scale: 0.97 }}
-                onClick={onDecline}
+                onClick={handleDecline}
                 className="py-3.5 bg-[#f2f2f7] dark:bg-[#2c2c2e] hover:bg-[#e5e5ea] dark:hover:bg-[#3a3a3c] text-black dark:text-white text-[15px] font-semibold rounded-xl transition-colors"
               >
                 Decline
               </motion.button>
               <motion.button
                 whileTap={{ scale: 0.97 }}
-                onClick={onAccept}
+                onClick={handleAccept}
                 className="py-3.5 bg-blue-500 hover:bg-blue-600 text-white text-[15px] font-semibold rounded-xl shadow-lg shadow-blue-500/25 transition-all"
               >
                 Accept

@@ -75,11 +75,8 @@ class PeerService extends EventEmitter {
       this.discoveryInterval = null;
     }
 
-    // Use a fixed 'lan' hash for local discovery simulation + random slot
-    // This allows peers to find each other by scanning the slots
-    const ipHash = 'lan'; 
-    const slot = Math.floor(Math.random() * MAX_DISCOVERY_SLOTS);
-    const peerId = `merodrop-${ipHash}-${slot}`;
+    const slot = Math.floor(Math.random() * 51); // 0-50
+    const peerId = `merodrop-lan-${slot}`;
 
     if (this.peer) {
         this.peer.destroy();
@@ -93,11 +90,7 @@ class PeerService extends EventEmitter {
     this.peer.on('open', (id) => {
       this.myId = id;
       this.emit('open', id);
-      this.discoverPeers(ipHash, slot);
-
-      // Periodic discovery for robustness (every 5s)
-      // This ensures peers that come online later are found
-      this.discoveryInterval = setInterval(() => this.discoverPeers(ipHash, slot), 5000);
+      this.startDiscoveryLoop();
     });
 
     this.peer.on('connection', (conn) => {
@@ -126,57 +119,61 @@ class PeerService extends EventEmitter {
     });
   }
 
+  private async startDiscoveryLoop() {
+    if (this.discoveryInterval) clearInterval(this.discoveryInterval);
+    
+    const loop = async () => {
+        const batchSize = 5;
+        const delay = 500;
+        const totalSlots = 51;
+
+        for (let i = 0; i < totalSlots; i += batchSize) {
+            for (let j = 0; j < batchSize && (i + j) < totalSlots; j++) {
+                const targetSlot = i + j;
+                const targetId = `merodrop-lan-${targetSlot}`;
+                if (targetId !== this.myId) {
+                    this.connect(targetId);
+                }
+            }
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+    };
+    
+    loop(); // Initial scan
+    this.discoveryInterval = setInterval(loop, 10000); // Re-scan every 10s
+  }
+
   private async discoverPeers(ipHash: string, mySlot: number) {
-    const batchSize = 5;
-    const delay = 200;
-
-    for (let i = 0; i < MAX_DISCOVERY_SLOTS; i += batchSize) {
-      // Create a batch of slots to scan
-      const batch = [];
-      for (let j = 0; j < batchSize && (i + j) < MAX_DISCOVERY_SLOTS; j++) {
-        const slot = i + j;
-        if (slot === mySlot) continue;
-        batch.push(slot);
-      }
-
-      // Connect to this batch
-      batch.forEach(slot => {
-        const targetId = `merodrop-${ipHash}-${slot}`;
-        this.connect(targetId);
-      });
-
-      // Wait before next batch to prevent browser freeze/crash
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
+      // Deprecated in favor of startDiscoveryLoop
   }
 
   public connect(peerId: string) {
-    // Prevent connecting to self
     if (peerId === this.myId) return;
-    
     if (!this.peer || this.connections.has(peerId)) return;
 
-    const conn = this.peer.connect(peerId, {
-      reliable: true,
-      metadata: { 
-        name: this.myName, 
-        device: this.myDevice,
-        deviceType: this.myDeviceType
-      }
-    });
-    
-    // Immediate cleanup on error for outgoing connections
-    conn.on('error', () => {
+    try {
+      const conn = this.peer.connect(peerId, {
+        reliable: true,
+        metadata: { 
+          name: this.myName, 
+          device: this.myDevice,
+          deviceType: this.myDeviceType
+        }
+      });
+      
+      // Self-Healing Strategy: Catch and cleanup immediately
+      const cleanup = () => {
         conn.close();
         this.connections.delete(peerId);
-    });
-    
-    // Also cleanup if it closes immediately
-    conn.on('close', () => {
-        this.connections.delete(peerId);
-    });
+      };
 
-    this.handleConnection(conn);
+      conn.on('error', cleanup);
+      conn.on('close', () => this.connections.delete(peerId));
+      
+      this.handleConnection(conn);
+    } catch (err) {
+      // Silent catch for connection initialization errors
+    }
   }
 
   public sendFile(file: File, peerId: string, origin: 'main' | 'chat') {
@@ -304,6 +301,11 @@ class PeerService extends EventEmitter {
     });
 
     conn.on('data', (data: any) => {
+      // Prioritize handshake data
+      if (data && data.type === 'handshake') {
+        this.handleData(data, conn.peer, conn);
+        return;
+      }
       this.handleData(data, conn.peer, conn);
     });
 

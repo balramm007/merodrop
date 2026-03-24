@@ -9,7 +9,7 @@ const BackgroundWaves = () => {
       <div className="absolute w-[40vmin] h-[40vmin] border border-white/10 rounded-full animate-ripple animate-ripple-delay-1" />
       {/* Circle 3 */}
       <div className="absolute w-[40vmin] h-[40vmin] border border-white/10 rounded-full animate-ripple animate-ripple-delay-2" />
-      
+
       {/* Static center circles to match MeroDrop aesthetic */}
       <div className="absolute w-[20vmin] h-[20vmin] border border-white/5 rounded-full" />
       <div className="absolute w-[40vmin] h-[40vmin] border border-white/5 rounded-full" />

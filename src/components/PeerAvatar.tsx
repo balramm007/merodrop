@@ -55,7 +55,7 @@ const PeerAvatar: React.FC<PeerAvatarProps> = ({ peer, onClick, onContextMenu, p
         onContextMenu(null as any, peer);
         isHolding.current = false;
       }
-    }, 2000);
+    }, 1000);
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
@@ -74,7 +74,7 @@ const PeerAvatar: React.FC<PeerAvatarProps> = ({ peer, onClick, onContextMenu, p
     }
 
     if (isHolding.current && dist < 10) {
-      if (elapsed < 2000) {
+      if (elapsed < 1000) {
         onClick(peer);
       }
     }
